@@ -1,5 +1,3 @@
-package org.example;
-
 import java.io.OutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
