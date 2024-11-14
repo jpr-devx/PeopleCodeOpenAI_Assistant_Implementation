@@ -1,3 +1,6 @@
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.OutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -13,13 +16,19 @@ public class AssistantConversation {
 
 
     String modelName;
+    String assistantId;
 
 
-    private static final String API_KEY = System.getenv("OPENAI_API_KEY");
+    private String API_KEY = System.getenv("OPENAI_API_KEY");
 //    private static final String API_KEY = "demo";
 
     public AssistantConversation(){
         this.modelName = "gpt-3.5-turbo";
+    }
+
+    public AssistantConversation(String assistantId){
+        this.modelName = "gpt-3.5-turbo";
+        this.assistantId = assistantId;
     }
 
 
@@ -64,6 +73,15 @@ public class AssistantConversation {
                     System.out.println("Response from OpenAI: " + response.toString());
 
 
+                    //create ObjectMapper instance
+                    ObjectMapper objectMapper = new ObjectMapper();
+
+                    //read JSON like DOM Parser
+                    JsonNode rootNode = objectMapper.readTree(response.toString());
+                    this.assistantId = rootNode.path("id").toString();
+
+                    // Getting rid of pair of double quotes, there's probably a more elegant way to do this
+                    this.assistantId = this.assistantId.substring(1,this.assistantId.length()-1);
 
                 }
             } else {
@@ -78,8 +96,41 @@ public class AssistantConversation {
     }
 
 
-    public String findAssistant(){
+    public String getAssistant(){
+        try {
+            // URL for the OpenAI Chat Completion endpoint
+            URL url = new URL("https://api.openai.com/v1/assistants/" + this.assistantId);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
+            // Setting headers
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+
+            // Handling the response
+            int status = connection.getResponseCode();
+            String msg = connection.getResponseMessage();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    System.out.println("Response from OpenAI: " + response.toString());
+
+
+                }
+            } else {
+                System.out.println("Error: " + status);
+                System.out.println("Msg: " + msg);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
 
         return "";
@@ -134,17 +185,53 @@ public class AssistantConversation {
         }
     }
 
+    private void createThread(){
+        try {
+            // URL for the OpenAI Chat Completion endpoint
+            URL url = new URL("https://api.openai.com/v1/assistants/" + this.assistantId);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
-    /**
-     *
-     * @param args
-     */
+            // Setting headers
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+
+            // Handling the response
+            int status = connection.getResponseCode();
+            String msg = connection.getResponseMessage();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    System.out.println("Response from OpenAI: " + response.toString());
+
+
+                }
+            } else {
+                System.out.println("Error: " + status);
+                System.out.println("Msg: " + msg);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
 
 
     public static void main(String[] args){
 
-        AssistantConversation basicConverstaion = new AssistantConversation();
-        basicConverstaion.createAssistant();
+        AssistantConversation basicConversation = new AssistantConversation("asst_tcw2G4TeNib4QJfWdLqgGBBg");
+
+        String result = basicConversation.getAssistant();
+        System.out.println(result);
+
 
     }
 }
