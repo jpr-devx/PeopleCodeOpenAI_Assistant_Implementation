@@ -23,7 +23,6 @@ public class AssistantConversation {
 
     private String API_KEY = System.getenv("OPENAI_API_KEY");
     private String ASSISTANT_ID = System.getenv("ASSISTANT_ID");
-//    private static final String API_KEY = "demo";
 
     public AssistantConversation(){
         this.modelName = "gpt-3.5-turbo";
