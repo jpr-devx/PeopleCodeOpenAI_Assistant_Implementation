@@ -527,6 +527,30 @@ public class AssistantConversation {
         } while (!input.equals("quit"));
     }
 
+    public static void defaultRAGConversation(){
+        AssistantConversation RAGConversation = new AssistantConversation("asst_hufNwSSTWQID6o1qt3kB6i3l");
+
+        String assistant = RAGConversation.getAssistant();
+
+        RAGConversation.setThread();
+
+
+        Scanner scan = new Scanner(System.in);
+        String input;
+
+        do {
+            System.out.print("Query: ");
+            input = scan.nextLine();
+
+            Object userMessage = RAGConversation.createUserMessage(RAGConversation.thread.getThreadId(), input);
+
+            Object assistantReply = RAGConversation.assistantReply();
+            Object conversation = RAGConversation.getMessages(RAGConversation.thread.getThreadId());
+            System.out.println(RAGConversation.getMostRecentMessage(conversation));
+
+
+        } while (!input.equals("quit"));
+    }
 
     /**
      * Given the complete file path with filename.ext, file is uploaded to OpenAI. Not sure where yet
@@ -623,10 +647,11 @@ public class AssistantConversation {
         //  2) retrieveUpload, some way of tracking what files we're dealing with for easy lookup
         //  3) Vector store creation, this is a parameter used when creating/modifying assistant with file_search as a tool
 
-        AssistantConversation test = new AssistantConversation();
+//        AssistantConversation test = new AssistantConversation();
+//
+//        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
 
-        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
-
+        defaultRAGConversation();
 
 
 
