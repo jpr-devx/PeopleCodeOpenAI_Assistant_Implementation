@@ -647,6 +647,7 @@ public class AssistantConversation {
         //  2) retrieveUpload, some way of tracking what files we're dealing with for easy lookup
         //  3) Vector store creation, this is a parameter used when creating/modifying assistant with file_search as a tool
 
+
 //        AssistantConversation test = new AssistantConversation();
 //
 //        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
