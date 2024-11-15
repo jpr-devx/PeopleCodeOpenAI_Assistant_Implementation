@@ -22,6 +22,7 @@ public class AssistantConversation {
 
 
     private String API_KEY = System.getenv("OPENAI_API_KEY");
+    private String ASSISTANT_ID = System.getenv("ASSISTANT_ID");
 //    private static final String API_KEY = "demo";
 
     public AssistantConversation(){
@@ -501,9 +502,9 @@ public class AssistantConversation {
      * Currently uses already-existent assistant, sets message thread and allows user to send queries to assistant to
      * receive replies back to advance conversation
      */
-    public static void basicConversation(){
+    public void basicConversation(){
 
-        AssistantConversation basicConversation = new AssistantConversation("asst_tcw2G4TeNib4QJfWdLqgGBBg");
+        AssistantConversation basicConversation = new AssistantConversation(this.ASSISTANT_ID);
 
         String assistant = basicConversation.getAssistant();
 
@@ -527,8 +528,8 @@ public class AssistantConversation {
         } while (!input.equals("quit"));
     }
 
-    public static void defaultRAGConversation(){
-        AssistantConversation RAGConversation = new AssistantConversation("asst_hufNwSSTWQID6o1qt3kB6i3l");
+    public void defaultRAGConversation(){
+        AssistantConversation RAGConversation = new AssistantConversation(this.ASSISTANT_ID);
 
         String assistant = RAGConversation.getAssistant();
 
@@ -546,6 +547,7 @@ public class AssistantConversation {
 
             Object assistantReply = RAGConversation.assistantReply();
             Object conversation = RAGConversation.getMessages(RAGConversation.thread.getThreadId());
+            //note: Only the assistant message is printed out here since the CLI retains the user's query
             System.out.println(RAGConversation.getMostRecentMessage(conversation));
 
 
@@ -602,7 +604,6 @@ public class AssistantConversation {
                 os.write(input, 0, input.length);
             }
 
-
             // Handling the response
             int status = connection.getResponseCode();
             String msg = connection.getResponseMessage();
@@ -630,6 +631,7 @@ public class AssistantConversation {
 
     }
 
+
     private Object completeUpload(Object pendingUpload){
         // todo: take response from addUpload return and submit POST request with uploadID
 
@@ -652,7 +654,9 @@ public class AssistantConversation {
 //
 //        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
 
-        defaultRAGConversation();
+        AssistantConversation conversation = new AssistantConversation();
+        conversation.defaultRAGConversation();
+
 
 
 
