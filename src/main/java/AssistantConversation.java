@@ -616,6 +616,13 @@ public class AssistantConversation {
 
     public static void main(String[] args){
 
+        // todo:
+        //  1) modify addUpload method to use the /files API endpoint. This seems specific to files within the file
+        //  limitation. The 600 page OSHA reg that was used is only 9 MB. For the initial project, a baked in file-size
+        //  limitation would be beneficial in terms of cost.
+        //  2) retrieveUpload, some way of tracking what files we're dealing with for easy lookup
+        //  3) Vector store creation, this is a parameter used when creating/modifying assistant with file_search as a tool
+
         AssistantConversation test = new AssistantConversation();
 
         Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
