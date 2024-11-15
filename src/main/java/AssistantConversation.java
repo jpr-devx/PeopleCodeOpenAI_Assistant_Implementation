@@ -1,13 +1,13 @@
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.JsonObject;
 
+import java.io.File;
 import java.io.OutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Scanner;
 
@@ -314,7 +314,9 @@ public class AssistantConversation {
             connection.setDoOutput(true);
 
             // JSON payload
-            String jsonInputString = "{ \"role\": \"" + "user" + "\", \"content\": \"" + message + "\" }";
+            String jsonInputString = "{ \"role\": \"" + "user" +
+                                     "\", \"content\": \"" + message +
+                                     "\" }";
 
             // Sending the request
             try (OutputStream os = connection.getOutputStream()) {
@@ -495,8 +497,10 @@ public class AssistantConversation {
         }
     }
 
-
-
+    /**
+     * Currently uses already-existent assistant, sets message thread and allows user to send queries to assistant to
+     * receive replies back to advance conversation
+     */
     public static void basicConversation(){
 
         AssistantConversation basicConversation = new AssistantConversation("asst_tcw2G4TeNib4QJfWdLqgGBBg");
@@ -524,10 +528,97 @@ public class AssistantConversation {
     }
 
 
+    /**
+     * Given the complete file path with filename.ext, file is uploaded to OpenAI. Not sure where yet
+     * Individual files can be up to 512 MB, and the size of all files uploaded by one organization can be up to 100 GB.
+     * There seems to be a workaround for this file size limitation through uploading by parts limited to 64 MB with
+     * a total file size limit of 8 GB
+     *
+     * NOTE: this method does not lead to the actual uploading. It must be completed.
+     * @param filePath complete filepath with extension
+     * @return pendingUpload (Upload object with status "pending")
+     */
+    private Object addUpload(String filePath){
+
+        try {
+            File file = new File(filePath);
+            String fileName = file.getName();
+            long fileBytes = file.length();
+            String filePurpose = "assistants";
+            String fileMimeType = Files.probeContentType(file.toPath());
+
+
+//            System.out.println("File Name: " + fileName);
+//            System.out.println("File Size (in bytes): " + fileBytes);
+//            System.out.println("File Purpose: " + filePurpose);
+//            System.out.println("File MIME Type: " + fileMimeType);
+
+
+
+            // URL for the OpenAI Chat Completion endpoint
+            URL url = new URL("https://api.openai.com/v1/uploads");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            // Setting headers
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+
+            // JSON payload
+            String jsonInputString = "{ \"filename\": \"" + fileName +
+                                       "\", \"purpose\": \"" + filePurpose +
+                                       "\", \"bytes\": " + fileBytes +
+                                       ", \"mime_type\": \"" + fileMimeType +
+                                       "\" }";
+
+            // Sending the request
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonInputString.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+
+
+            // Handling the response
+            int status = connection.getResponseCode();
+            String msg = connection.getResponseMessage();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+//                    System.out.println("Response from OpenAI: " + response.toString());
+                    return response;
+
+                }
+            } else {
+                System.out.println("Error: " + status);
+                System.out.println("Msg: " + msg);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+
+    }
+
+    private Object completeUpload(Object pendingUpload){
+        // todo: take response from addUpload return and submit POST request with uploadID
+
+        return null;
+
+
+    }
 
     public static void main(String[] args){
 
-    basicConversation();
+        AssistantConversation test = new AssistantConversation();
+
+        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
 
 
 
