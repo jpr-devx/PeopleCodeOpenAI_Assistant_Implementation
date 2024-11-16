@@ -2,6 +2,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +15,6 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 
-import javax.rmi.ssl.SslRMIClientSocketFactory;
 
 /**
  * A class to represent a conversation with a chatbot.
@@ -29,10 +29,7 @@ import javax.rmi.ssl.SslRMIClientSocketFactory;
 public class OpenAIConversation {
     private MessageWindowChatMemory chatMemory;
     private ChatLanguageModel chatModel;
-
-
-    private String threadId; // For assistant conversations (Langchain4J vs OpenAI Assistant API integration gap, API
-    // call workaround and integration into pre-existent PeopleCodeOpenAI code
+    private String threadId; // Data member to allow for the integration of OpenAI's Assistant API
 
     // Constructors
     public OpenAIConversation(){
@@ -51,7 +48,7 @@ public class OpenAIConversation {
     }
 
     /**
-     * OpenAI Constructor allowing for OpenAI's Assistant API to be implementated. File search, code interpretation,
+     * OpenAI Constructor allowing for OpenAI's Assistant API to be implemented. File search, code interpretation,
      * and other functions/tools can be added on OpenAI's UI. This assistant must be created beforehand and it's ID
      * passed in
      * @param apiKey OpenAI API key
@@ -64,15 +61,16 @@ public class OpenAIConversation {
         // Adds threadId for messages to take place in (Equivalent to AssistantConversation's setThread)
         if (this.threadId == null){
             try {
-                // URL for the OpenAI Chat Completion endpoint
-                URL url = new URL("https://api.openai.com/v1/threads");
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                URI uri = new URI("https://api.openai.com/v1/threads");
+                HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
 
-                // Setting headers
+
+                // Setting request headers
                 connection.setRequestMethod("POST");
                 connection.setRequestProperty("Authorization", "Bearer " + apiKey);
                 connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+                connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header,
+                // required for Assistants beta access
 
                 // Handling the response
                 int status = connection.getResponseCode();
@@ -93,7 +91,6 @@ public class OpenAIConversation {
                     System.out.println("Error: " + status);
                     System.out.println("Msg: " + msg);
                 }
-
                 connection.disconnect();
             } catch (Exception e) {
                 e.printStackTrace();
@@ -120,67 +117,25 @@ public class OpenAIConversation {
     }
 
     /**
-     * Right now context isn't used as it can already be modified online.
+     * This askQuestion method takes in two additional parameters, an OpenAI API key and an ID corresponding to an
+     * OpenAI assistant that has been created.
      *
-     * @param apiKey
-     * @param context
-     * @param question
-     * @param assistantId
-     * @return
+     * @param apiKey OpenAI API key
+     * @param context System instructions for OpenAI assistant
+     * @param question User question to be asked to the assistant
+     * @param assistantId ID corresponding to an already-created OpenAI assistant
+     * @return Assistant's reply
      */
     public String askQuestion(String apiKey, String context, String question, String assistantId) {
 
-        // Create user message to add it to the thread
-        try {
-            // URL for the OpenAI Chat Completion endpoint
-            URL url = new URL("https://api.openai.com/v1/threads/" + threadId + "/messages");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-            // Setting headers
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
-            connection.setDoOutput(true);
-
-            // JSON payload
-            String jsonInputString = "{ \"role\": \"" + "user" +
-                    "\", \"content\": \"" + question +
-                    "\" }";
-
-            // Sending the request
-            try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = jsonInputString.getBytes("utf-8");
-                os.write(input, 0, input.length);
-            }
-
-
-            // Handling the response
-            int status = connection.getResponseCode();
-            String msg = connection.getResponseMessage();
-            if (status == 200) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-                }
-            } else {
-                System.out.println("Error: " + status);
-                System.out.println("Msg: " + msg);
-            }
-            connection.disconnect();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        // Now that the user message has been made, the thread must be executed
-        // For this we must do two things: 1) Modify the assistant with the context (instructions on their end)
-        //                                 2) Run the thread with the newly modified assistant (assistant will reply
-        //                                 with this run)
-        //                                 3) Get the list of messages in the thread after the run has been completed
-        //                                 4) Return the most recent message in that list, the assistant's message
+        // Here is an outline for the algorithm:
+        //          1) Modify the assistant with the context (instructions on their end)
+        //          2) Send user question to the thread through a POST REQUEST. Then Add user message to langchain's
+        //          ChatMemory object we have as a data member for the OpenAIConverstion object
+        //          3) Run the thread with the newly modified assistant (assistant will reply with this run)
+        //          4) Get the list of messages in the thread after the run has been completed
+        //          5) Return the most recent message in that list, the assistant's message
+        //          6) Add assistant's reply to langchain4j's ChatMemory object
 
         // 1) Modify the assistant with the context passed in
         try {
@@ -225,11 +180,57 @@ public class OpenAIConversation {
             e.printStackTrace();
         }
 
-        // NEW STEP: Add user message to Langchain4J's chatmemory object
+        // 2) Create user message to add it to the thread
+        try {
+            // URL for the OpenAI Chat Completion endpoint
+
+            URI uri = new URI("https://api.openai.com/v1/threads/" + threadId + "/messages");
+            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+
+            // Setting headers
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+            connection.setDoOutput(true);
+
+            // JSON payload
+            String jsonInputString = "{ \"role\": \"" + "user" +
+                    "\", \"content\": \"" + question +
+                    "\" }";
+
+            // Sending the request
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonInputString.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+
+
+            // Handling the response
+            int status = connection.getResponseCode();
+            String msg = connection.getResponseMessage();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                }
+            } else {
+                System.out.println("Error: " + status);
+                System.out.println("Msg: " + msg);
+            }
+            connection.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // 2) (cont.) Now add user message to Langchain4J's chatmemory object
         this.chatMemory.add(new UserMessage(question));
 
 
-        // 2) Run thread to get assistant's reply (One run, we get the most recent message, the assistant's message
+        // 3) Run thread to get assistant's reply (One run, we get the most recent message, the assistant's message
         // from the list of Messages object that we can get from OpenAI. This list is sorted by the time the message
         // is created in descending order
         try {
@@ -276,10 +277,9 @@ public class OpenAIConversation {
             e.printStackTrace();
         }
 
-
         Object messagesObject = null;
 
-        // 3) Get the list of messages
+        // 4) Get the list of Message objects from OpenAI
         try {
             // URL for the OpenAI Chat Completion endpoint
             URL url = new URL("https://api.openai.com/v1/threads/" + threadId + "/messages");
@@ -314,20 +314,17 @@ public class OpenAIConversation {
             e.printStackTrace();
         }
 
-        // 4) Get the most recent message back by parsing through the JSON that was stored in the messagesObject, a
+        // 5) Get the most recent message back by parsing through the JSON that was stored in the messagesObject, a
         // response from out previous API call to get the list of Message objects from OpenAI
 
-        // First check to see if the third api call failed, for now we will just do a null check and return null if
-        // that is the case.
-
-        if (messagesObject == null) return null;
+        if (messagesObject == null) return null; // Null check for thirdApi call response, returns null if true
 
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode rootNode = objectMapper.readTree(messagesObject.toString());
             String assistantReply = rootNode.path("data").get(0).get("content").get(0).path("text").path("value").toString();
 
-            // NEW STEP: Add assistant reply to langchain4j's chatmemory object as an AiMessage object
+            // 6) Add assistant reply to langchain4j's chatmemory object as an AiMessage object
             this.chatMemory.add(new AiMessage(assistantReply));
 
             return assistantReply;
@@ -338,6 +335,16 @@ public class OpenAIConversation {
     }
 
 
+    /**
+     * This generateSampleQuestions takes in two additional parameters to access OpenAI's Assistant API, an OpenAI
+     * API key and an ID corresponding to an OpenAI assistant that has been created.
+     * @param apiKey OpenAI API key
+     * @param context System instructions for OpenAI assistant
+     * @param assistantId ID corresponding to an already-created OpenAI assistant
+     * @param count Number of sample questions to be generated
+     * @param maxWords Max length allowed for each sample question
+     * @return List of sample questions
+     */
     public List<String> generateSampleQuestions(String apiKey, String context, String assistantId, int count,
                                                 int maxWords){
 
@@ -384,6 +391,7 @@ public class OpenAIConversation {
     public String toString() {
         return chatMemory.messages().toString();
     }
+
     /**
      *
      * main is a sample that asks two questions, the second of which
@@ -396,20 +404,48 @@ public class OpenAIConversation {
         String modelName = "gpt-4o-mini";
         String assistantId = System.getenv("ASSISTANT_ID");
 
-        OpenAIConversation conversation = new OpenAIConversation(apiKey, modelName, assistantId);
 
-//        String response = conversation.askQuestion(apiKey, "You are to respond in poetic way", "This is a test,
-//        please list notable points in your documents that you have loaded, otherwise send a greeting", assistantId);
-//        System.out.println("Response: " + response);
-//
-//        response = conversation.askQuestion(apiKey, "You are to respond in poetic way", "What was the first point
-//        you listed? Or did you send a greeting instead", assistantId);
+        // Base methods demonstration
+        // Example conversation
+//        OpenAIConversation conversation = new OpenAIConversation(apiKey,modelName);
+        // Generate sample questions
+//        List<String> questions = conversation.generateSampleQuestions("Questions about films in the 1960s", 3, 10);
+//        System.out.println("Sample questions: " + questions);
+
+        // Ask a question
+//        String response = conversation.askQuestion("You are a film expert", "What are the three best Quentin Tarintino movies?");
 //        System.out.println("Response: " + response);
 
-        List<String> questions = conversation.generateSampleQuestions(apiKey,"You are to respond in poetic way",
+        // Ask another question to show continuation-- openAI knows 'he' is Tarantino from memory
+//        response = conversation.askQuestion("You are a film expert", "How old is he");
+//        System.out.println("Response: " + response);
+
+        // Print conversation history
+//        System.out.println("\nConversation History:");
+//        System.out.println(conversation);
+
+
+
+        // Assistant methods demonstration
+//        // Example conversation
+        OpenAIConversation assistantConversation = new OpenAIConversation(apiKey, modelName, assistantId);
+//        // Generate sample questions
+        List<String> questions = assistantConversation.generateSampleQuestions(apiKey,"You are an expert in Discrete " +
+                        "math teaching a graduate student who has no clue how to go thorough this worksheet.",
                 assistantId, 3, 50);
+        System.out.println("Sample questions: " + questions);
+//
+//        // Ask a question
+        String response = assistantConversation.askQuestion(apiKey, "You are an expert in Discrete Mathematics " +
+                        "teaching a graduate student has no clue how to go through this worksheet.",
+                "How should I start with question 1?",
+                assistantId);
+        System.out.println("Response: " + response);
 
-        System.out.println(conversation);
+
+        // Print conversation history
+        System.out.println("\nConversation History:");
+        System.out.println(assistantConversation);
 
     }
 
