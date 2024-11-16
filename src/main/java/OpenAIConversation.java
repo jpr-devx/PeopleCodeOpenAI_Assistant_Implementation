@@ -124,6 +124,7 @@ public class OpenAIConversation {
 
     // note: Later functionality can be added to just modify the assistant with the new instructions regardless of
     //  whether or not what OpenAI has a different String on their end.
+    //todo: Is adding messages to the chatmemory necessary? OpenAI is already handling it through their end right?
     /**
      * Right now context isn't used as it can already be modified online.
      *
@@ -422,28 +423,19 @@ public class OpenAIConversation {
      */
 
     public static void main(String[] args) {
-//        // Example conversation
-//        OpenAIConversation conversation = new OpenAIConversation();
-//        // Generate sample questions
-//        List<String> questions = conversation.generateSampleQuestions("Questions about films in the 1960s", 3, 10);
-//        System.out.println("Sample questions: " + questions);
-//
-//        // Ask a question
-//        String response = conversation.askQuestion("You are a film expert", "What are the three best Quentin Tarintino movies?");
-//        System.out.println("Response: " + response);
-//
-//        // Ask another question to show continuation-- openAI knows 'he' is Tarantino from memory
-//        response = conversation.askQuestion("You are a film expert", "How old is he");
-//        System.out.println("Response: " + response);
-//
-//        // Print conversation history
-//        System.out.println("\nConversation History:");
-//        System.out.println(conversation);
-        ;
-        OpenAIConversation conversation = new OpenAIConversation(System.getenv("OPENAI_API_KEY"), "gpt-4o-mini",System.getenv("ASSISTANT_ID"));
 
-//        String response = conversation.askQuestion(System.getenv("OPENAI_API_KEY"),)
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        String modelName = "gpt-4o-mini";
+        String assistantId = System.getenv("ASSISTANT_ID");
 
+        OpenAIConversation conversation = new OpenAIConversation(apiKey, modelName, assistantId);
+
+        String response = conversation.askQuestion(apiKey, "test", "This is a test, please list critical regulations " +
+                "for acetylene", assistantId);
+        System.out.println("Response: " + response);
+
+        response = conversation.askQuestion(apiKey, "test", "What was the first point you listed?", assistantId);
+        System.out.println("Response: " + response);
 
     }
 
