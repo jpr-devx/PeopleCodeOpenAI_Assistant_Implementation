@@ -409,6 +409,52 @@ public class OpenAIConversation {
     }
 
 
+    private Object modifyAssistant(String assistantId, String apiKey, String context){
+        try {
+            // URL for the OpenAI Chat Completion endpoint
+            URL url = new URL("https://api.openai.com/v1/assistants/" + assistantId);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            // Setting headers
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+            connection.setDoOutput(true);
+
+            // JSON payload
+            String jsonInputString = "{ \"instructions\": \"" +
+                    context + "\" }";
+
+            // Sending the request
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonInputString.getBytes("utf-8");
+                os.write(input, 0, input.length);
+            }
+
+            // Handling the response
+            int status = connection.getResponseCode();
+            String msg = connection.getResponseMessage();
+            if (status == 200) {
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    return response;
+                }
+            } else {
+                System.out.println("Error: " + status);
+                System.out.println("Msg: " + msg);
+            }
+            connection.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     /**
      *
      * @return the messages thus far
@@ -430,12 +476,16 @@ public class OpenAIConversation {
 
         OpenAIConversation conversation = new OpenAIConversation(apiKey, modelName, assistantId);
 
-        String response = conversation.askQuestion(apiKey, "test", "This is a test, please list critical regulations " +
-                "for acetylene", assistantId);
-        System.out.println("Response: " + response);
+//        String response = conversation.askQuestion(apiKey, "You are to respond in poetic way", "This is a test, please list critical regulations for acetylene", assistantId);
+//        System.out.println("Response: " + response);
+//
+//        response = conversation.askQuestion(apiKey, "You are to respond in poetic way", "What was the first point you listed?", assistantId);
+//        System.out.println("Response: " + response);
 
-        response = conversation.askQuestion(apiKey, "test", "What was the first point you listed?", assistantId);
-        System.out.println("Response: " + response);
+
+        Object result = conversation.modifyAssistant(assistantId,apiKey,"THIS IS A TEST FOR CHANGING CONTEXT THROUGH " +
+                "AN API CALL");
+
 
     }
 
