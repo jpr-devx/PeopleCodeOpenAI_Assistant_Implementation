@@ -1,15 +1,14 @@
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.io.File;
-import java.io.OutputStream;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.HashMap;
-import java.util.Scanner;
+import java.util.*;
+import java.util.stream.Collectors;
 
 
 public class AssistantConversation {
@@ -23,6 +22,7 @@ public class AssistantConversation {
 
     private String API_KEY = System.getenv("OPENAI_API_KEY");
     private String ASSISTANT_ID = System.getenv("ASSISTANT_ID");
+    private static final String BASE_URL = "https://api.openai.com/v1";
 
     public AssistantConversation(){
         this.modelName = "gpt-3.5-turbo";
@@ -315,8 +315,8 @@ public class AssistantConversation {
 
             // JSON payload
             String jsonInputString = "{ \"role\": \"" + "user" +
-                                     "\", \"content\": \"" + message +
-                                     "\" }";
+                    "\", \"content\": \"" + message +
+                    "\" }";
 
             // Sending the request
             try (OutputStream os = connection.getOutputStream()) {
@@ -592,10 +592,10 @@ public class AssistantConversation {
 
             // JSON payload
             String jsonInputString = "{ \"filename\": \"" + fileName +
-                                       "\", \"purpose\": \"" + filePurpose +
-                                       "\", \"bytes\": " + fileBytes +
-                                       ", \"mime_type\": \"" + fileMimeType +
-                                       "\" }";
+                    "\", \"purpose\": \"" + filePurpose +
+                    "\", \"bytes\": " + fileBytes +
+                    ", \"mime_type\": \"" + fileMimeType +
+                    "\" }";
 
             // Sending the request
             try (OutputStream os = connection.getOutputStream()) {
@@ -631,12 +631,225 @@ public class AssistantConversation {
     }
 
 
-    private Object completeUpload(Object pendingUpload){
-        // todo: take response from addUpload return and submit POST request with uploadID
+    public void createAssistantForFileUpload() {
+        try {
+            URL url = new URL(BASE_URL + "/assistants");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
-        return null;
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v1");
+            connection.setDoOutput(true);
 
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("model", "gpt-4-turbo-preview");
+            payload.put("name", "API_ACCESS_TEST_JAVA");
+            payload.put("instructions", "You are a helpful assistant.");
 
+            // Add tools configuration
+            List<Map<String, String>> tools = new ArrayList<>();
+            Map<String, String> retrieval = new HashMap<>();
+            retrieval.put("type", "retrieval");
+            tools.add(retrieval);
+
+            payload.put("tools", tools);
+
+            ObjectMapper mapper = new ObjectMapper();
+            try (OutputStream os = connection.getOutputStream()) {
+                mapper.writeValue(os, payload);
+            }
+
+            int status = connection.getResponseCode();
+            String response = readResponse(connection);
+
+            System.out.println("Assistant creation status: " + status);
+            System.out.println("Assistant creation response: " + response);
+
+            if (status == 200 || status == 201) {
+                JsonNode rootNode = mapper.readTree(response);
+                this.assistantId = rootNode.get("id").asText();
+                System.out.println("Assistant created successfully with ID: " + this.assistantId);
+            } else {
+                System.err.println("Error creating assistant. Status: " + status);
+                System.err.println("Response: " + response);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            System.err.println("Failed to create assistant: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public String uploadFile(String filePath) {
+        try {
+            File file = new File(filePath);
+            if (!file.exists()) {
+                throw new FileNotFoundException("File does not exist: " + filePath);
+            }
+
+            URL url = new URL(BASE_URL + "/files");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            String boundary = "----WebKitFormBoundary" + System.currentTimeMillis();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+            connection.setDoOutput(true);
+
+            try (OutputStream os = connection.getOutputStream();
+                 PrintWriter writer = new PrintWriter(new OutputStreamWriter(os, StandardCharsets.UTF_8), true)) {
+
+                writer.append("--").append(boundary).append("\r\n");
+                writer.append("Content-Disposition: form-data; name=\"purpose\"\r\n\r\n");
+                writer.append("assistants").append("\r\n");
+
+                writer.append("--").append(boundary).append("\r\n");
+                writer.append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(file.getName()).append("\"\r\n");
+                writer.append("Content-Type: application/octet-stream\r\n\r\n");
+                writer.flush();
+
+                Files.copy(file.toPath(), os);
+                os.flush();
+
+                writer.append("\r\n");
+                writer.append("--").append(boundary).append("--").append("\r\n");
+            }
+
+            int status = connection.getResponseCode();
+            String response = readResponse(connection);
+
+            if (status == 200 || status == 201) {
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode rootNode = mapper.readTree(response);
+                String fileId = rootNode.get("id").asText();
+                System.out.println("File uploaded successfully. File ID: " + fileId);
+                return fileId;
+            } else {
+                System.err.println("Error uploading file. Status: " + status);
+                System.err.println("Response: " + response);
+                return null;
+            }
+        } catch (Exception e) {
+            System.err.println("Upload failed: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String readResponse(HttpURLConnection connection) throws IOException {
+        try (InputStream is = connection.getResponseCode() >= 400 ?
+                connection.getErrorStream() : connection.getInputStream();
+             BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            return br.lines().collect(Collectors.joining("\n"));
+        }
+    }
+
+    /**
+     * Retrieves file information after upload
+     * @param fileId The ID of the uploaded file
+     * @return FileResponse object containing file details, or null if failed
+     */
+    public FileResponse getFileInfo(String fileId) {
+        try {
+            URL url = new URL(BASE_URL + "/files/" + fileId);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+
+            int status = connection.getResponseCode();
+            String response = readResponse(connection);
+
+            if (status == 200) {
+                ObjectMapper mapper = new ObjectMapper();
+                return mapper.readValue(response, FileResponse.class);
+            } else {
+                System.err.println("Error getting file info. Status: " + status);
+                System.err.println("Response: " + response);
+                return null;
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to get file info: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Attaches an uploaded file to the assistant
+     * @param fileId The ID of the uploaded file
+     * @return boolean indicating success
+     */
+    public boolean attachFileToAssistant(String fileId) {
+        if (assistantId == null) {
+            System.err.println("No assistant ID available. Create an assistant first.");
+            return false;
+        }
+
+        try {
+            URL url = new URL(BASE_URL + "/assistants/" + assistantId + "/files");  // Changed endpoint
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v1");
+            connection.setDoOutput(true);
+
+            Map<String, String> payload = new HashMap<>();
+            payload.put("file_id", fileId);  // Changed to single file_id
+
+            ObjectMapper mapper = new ObjectMapper();
+            try (OutputStream os = connection.getOutputStream()) {
+                mapper.writeValue(os, payload);
+            }
+
+            int status = connection.getResponseCode();
+            String response = readResponse(connection);
+
+            if (status == 200 || status == 201) {
+                System.out.println("File attached to assistant successfully.");
+                return true;
+            } else {
+                System.err.println("Error attaching file. Status: " + status);
+                System.err.println("Response: " + response);
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to attach file: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Response class for file information
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class FileResponse {
+        public String id;
+        public String object;
+        public long bytes;
+        public long created_at;
+        public String filename;
+        public String purpose;
+        public String status;
+
+        // Getters and setters
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public String getObject() { return object; }
+        public void setObject(String object) { this.object = object; }
+        public long getBytes() { return bytes; }
+        public void setBytes(long bytes) { this.bytes = bytes; }
+        public long getCreatedAt() { return created_at; }
+        public void setCreatedAt(long created_at) { this.created_at = created_at; }
+        public String getFilename() { return filename; }
+        public void setFilename(String filename) { this.filename = filename; }
+        public String getPurpose() { return purpose; }
+        public void setPurpose(String purpose) { this.purpose = purpose; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
     }
 
     public static void main(String[] args){
@@ -654,10 +867,25 @@ public class AssistantConversation {
 //        Object testUploadResponse = test.addUpload("cs514_exception_handling_worksheet.pdf");
 
         AssistantConversation conversation = new AssistantConversation();
+
+        // TOMS ADDED IN CODE TO CREATE A NEW ASSISTANT AND ATTACH THE UPLOADED FILE. AT THE MOMENT THE FILE IS HARDCODED
+        // COMMENT THIS IN TO TEST IT. COMMENTED OUT NOW TO NOT SPAM UPLOADS
+//        conversation.createAssistantForFileUpload();
+//        String fileId = conversation.uploadFile("cs514_exception_handling_worksheet.pdf");
+//        System.out.println("Uploaded file ID: " + fileId);
+//        if (fileId != null) {
+//            // Get file info
+//            FileResponse fileInfo = conversation.getFileInfo(fileId);
+//            if (fileInfo != null) {
+//                System.out.println("File status: " + fileInfo.getStatus());
+//                System.out.println("File size: " + fileInfo.getBytes() + " bytes");
+//            }
+//
+//            // Attach file to assistant
+//            boolean attached = conversation.attachFileToAssistant(fileId);
+//            System.out.println("File attached to assistant: " + attached);
+//        }
+
         conversation.defaultRAGConversation();
-
-
-
-
     }
 }
