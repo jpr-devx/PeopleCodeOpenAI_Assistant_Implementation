@@ -40,7 +40,9 @@ public class AssistantConversation {
 
     /** Creates a new OpenAI assistant (with file_search enabled) object and sets this.assistantId to the ID contained
      * in the Assistant object
+     * @deprecated Use the createAssistant(String assistantName) method
      */
+    @Deprecated
     public void createAssistant(){
         try {
             URL url = new URL(BASE_URL + "/assistants");
@@ -147,6 +149,64 @@ public class AssistantConversation {
             e.printStackTrace();
         }
     }
+
+    /**
+     * Sets this.assistantId to assistant created with name assistantName
+     * @param assistantName desired name for assistant
+     */
+    public void createAssistant(String assistantName, boolean verbose){
+        try {
+            URL url = new URL(BASE_URL + "/assistants");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");
+            connection.setDoOutput(true);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("model", this.modelName);
+            payload.put("name", assistantName);
+            payload.put("instructions", "You are a helpful assistant.");
+
+            // Add tools configuration
+            List<Map<String, String>> tools = new ArrayList<>();
+            Map<String, String> retrieval = new HashMap<>();
+            retrieval.put("type", "file_search");
+            tools.add(retrieval);
+
+            payload.put("tools", tools);
+
+            ObjectMapper mapper = new ObjectMapper();
+            try (OutputStream os = connection.getOutputStream()) {
+                mapper.writeValue(os, payload);
+            }
+
+            int status = connection.getResponseCode();
+            String response = readResponse(connection);
+
+            if (verbose) {
+                System.out.println("Assistant creation status: " + status);
+                System.out.println("Assistant creation response: " + response);
+            }
+
+            if (status == 200 || status == 201) {
+                JsonNode rootNode = mapper.readTree(response);
+                this.assistantId = rootNode.get("id").asText();
+                System.out.println("Assistant created successfully with ID: " + this.assistantId);
+            } else {
+                System.err.println("Error creating assistant. Status: " + status);
+                if (verbose) System.err.println("Response: " + response);
+            }
+
+            connection.disconnect();
+        } catch (Exception e) {
+            System.err.println("Failed to create assistant: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
 
     /**
      * Returns OpenAI Assistant object tied with ID this.assistantId
@@ -356,7 +416,7 @@ public class AssistantConversation {
      * Called after user message is created. Generates thread title for sidebar
      * @return thread title
      */
-    private String generateThreadTitle(String userMessage){
+    private String generateThreadTitle(String messages){
         // Create temp thread
         String tempThreadId = "";
         String threadTitle = "";
@@ -397,15 +457,9 @@ public class AssistantConversation {
             e.printStackTrace();
         }
 
-        // Send userMessage asking to generate a description including "A domain expert on <description of documents
-        // loaded for that assistant>"
-        String message =
-                "Generate a short phrase describing the user's question. You are required to be concise for the " +
-                        "purpose of this being a label for a conversation. If you have files loaded, use them" +
-                        " as context for your title generation. Be specific in your title when the user is " +
-                        "referring to your files. For instance, if the user is asking about a particular line " +
-                        "item, section, problem, or point in any of your files, use the content located at the " +
-                        "section that the user is asking about in your title generation. Leave out any Title label in your reply. User's question: " + userMessage;
+        // Send userMessage asking to generate a description
+        // For some reason, appending the assistant's message to the below string leads to a bad request, but the context still gets a good threadTitle without the assistant's message in there
+        String message = "You are given a String of two messages in the following format: User: <User's message> Assistant: <Your reply to the user's question>. You are required to give a short title describing the user's question, given any files you have loaded if the user is inquiring about them in their question and your reply to that user's question as context for your title. Leave out any 'Title' label in your reply. See the following messages: " + messages;
         String userMessageResponse = this.createUserMessage(tempThreadId, message).toString();
 
         // Run thread and obtain assistant's generated description
@@ -686,7 +740,7 @@ public class AssistantConversation {
             int status = connection.getResponseCode();
             String msg = connection.getResponseMessage();
             if (status == 200) {
-                this.chatMessages.add(message);
+                if (threadId.equals(this.threadId)) this.chatMessages.add(message);
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
@@ -1006,6 +1060,30 @@ public class AssistantConversation {
         return false;
     }
 
+    /**
+     * Cradle-to-grave method combining uploadFile, getFileInfo and attachFileToAssistant. If verbose, everything is printed, otherwise, only result is printed
+     * @return true if file was uploaded to assistant object, false otherwise
+     */
+    public boolean uploadFileToAssistant(String filePath, boolean verbose) {
+        String fileId = uploadFile(filePath);
+        if (fileId != null) {
+            // Get file info
+            FileResponse fileInfo = this.getFileInfo(fileId);
+            if (fileInfo != null) {
+                if (verbose) {
+                    System.out.println("File status: " + fileInfo.getStatus());
+                    System.out.println("File size: " + fileInfo.getBytes() + " bytes");
+                }
+            }
+//
+            // Attach file to assistant
+            boolean attached = this.attachFileToAssistant(fileId);
+            System.out.println("File attached to assistant: " + attached);
+            return attached;
+        }
+        System.out.println("No file was uploaded, fileId was null");
+        return false;
+    }
 
     // Response class for file information
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -1129,11 +1207,11 @@ public class AssistantConversation {
 
         // Method calls demonstrating file upload and addition to assistant
         // 1) Assistant creation
-//        conversation.createAssistant("TEMP_TEST_DESCRIPTION");
+        conversation.createAssistant("DEMO_ASSISTANT", false);
 
         // 2) Local file upload and adding to assistant
-//        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("cs514_exception_handling_worksheet.pdf"));
-//        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("Javascript and React Worksheet.pdf"));
+        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("cs514_exception_handling_worksheet.pdf", false));
+        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("Javascript and React Worksheet.pdf", false));
 //
         // 3) Method calls demonstrating description generation on assistant's domain expertise then adding it to the
         // Assistant object on OpenAIs end
@@ -1149,20 +1227,21 @@ public class AssistantConversation {
 //        System.out.println("Assistant object after temperature add:\n" + conversation.getAssistant(conversation.assistantId));
 
         // 5) Method calls demonstrating back and forth with conversation history ArrayList addition
-//        conversation.createUserMessage(conversation.threadId, "What is the answer to problem 3?");
-//        conversation.assistantReply();
-//        conversation.createUserMessage(conversation.threadId, "Can you explain your solution in simpler terms?");
-//        conversation.assistantReply();
+        conversation.createUserMessage(conversation.threadId, "What is the answer to problem 3?");
+        conversation.assistantReply();
+        conversation.createUserMessage(conversation.threadId, "Can you explain your solution in simpler terms?");
+        conversation.assistantReply();
 //
         // 6) Conversation history
-//        System.out.println("\n\nConversation history:");
-//        for (String message : conversation.chatMessages) {
-//            System.out.println("Message:\n" + message + "\n");
-//        }
+        System.out.println("\n\nConversation history:");
+        for (String message : conversation.chatMessages) {
+            System.out.println("Message:\n" + message + "\n");
+        }
 
         // 7) Method calls demonstrating thread title generation following a userMessage
-//        String threadTitle = conversation.generateThreadTitle(conversation.chatMessages.getFirst());
-//        System.out.println("Thread title: " + threadTitle);
+//        String threadTitle = conversation.generateThreadTitle("User: " + conversation.chatMessages.get(0) + "\nAssistant: " + conversation.chatMessages.get(1));
+        String threadTitle = conversation.generateThreadTitle(conversation.chatMessages.getFirst());
+        System.out.println("Thread title: " + threadTitle);
 
     }
 }
