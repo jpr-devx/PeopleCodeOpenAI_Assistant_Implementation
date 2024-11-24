@@ -17,95 +17,76 @@ public class AssistantConversation {
 
     String modelName;
     String assistantId;
-    Thread thread;
+    String threadId;
 
 
     private String API_KEY = System.getenv("OPENAI_API_KEY");
-    private String ASSISTANT_ID = System.getenv("ASSISTANT_ID");
     private static final String BASE_URL = "https://api.openai.com/v1";
 
     public AssistantConversation(){
-        this.modelName = "gpt-3.5-turbo";
+        this.modelName = "gpt-4o-mini";
     }
 
     public AssistantConversation(String assistantId){
-        this.modelName = "gpt-3.5-turbo";
+        this.modelName = "gpt-4o-mini";
         this.assistantId = assistantId;
-        this.thread = new Thread(this.createThread());
+        this.threadId = this.createThread();
     }
 
 
     public void createAssistant(){
         try {
-            // URL for the OpenAI Chat Completion endpoint
-            URL url = new URL("https://api.openai.com/v1/assistants");
+            URL url = new URL(BASE_URL + "/assistants");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
-            // Setting headers
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");  // Adding the beta HTTP header
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");
             connection.setDoOutput(true);
 
-            // JSON payload
-            String jsonInputString = """
-                {
-                    "model": "gpt-3.5-turbo",
-                    "temperature": 0.5,
-                    "name":"API_ACCESS_TEST_JAVA"
-                }
-            """;
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("model", this.modelName);
+            payload.put("name", "API_ACCESS_TEST_JAVA");
+            payload.put("instructions", "You are a helpful assistant.");
 
+            // Add tools configuration
+            List<Map<String, String>> tools = new ArrayList<>();
+            Map<String, String> retrieval = new HashMap<>();
+            retrieval.put("type", "file_search");
+            tools.add(retrieval);
 
-            // String jsonInputString = "{ \"model\": \"" + this.modelName +
-            //                                "\", \"temperature\": \"" + 0.5 +
-            //                                "\", \"name\": \"" + assistantName +
-            //                                "\" }";
+            payload.put("tools", tools);
 
-
-            // Sending the request
+            ObjectMapper mapper = new ObjectMapper();
             try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = jsonInputString.getBytes("utf-8");
-                os.write(input, 0, input.length);
+                mapper.writeValue(os, payload);
             }
 
-            // Handling the response
             int status = connection.getResponseCode();
-            String msg = connection.getResponseMessage();
-            if (status == 200) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-                    System.out.println("Response from OpenAI: " + response.toString());
+            String response = readResponse(connection);
 
+            System.out.println("Assistant creation status: " + status);
+            System.out.println("Assistant creation response: " + response);
 
-                    //create ObjectMapper instance
-                    ObjectMapper objectMapper = new ObjectMapper();
-
-                    //read JSON like DOM Parser
-                    JsonNode rootNode = objectMapper.readTree(response.toString());
-                    this.assistantId = rootNode.path("id").toString();
-
-                    // Getting rid of pair of double quotes, there's probably a more elegant way to do this
-                    this.assistantId = this.assistantId.substring(1,this.assistantId.length()-1);
-
-                }
+            if (status == 200 || status == 201) {
+                JsonNode rootNode = mapper.readTree(response);
+                this.assistantId = rootNode.get("id").asText();
+                System.out.println("Assistant created successfully with ID: " + this.assistantId);
             } else {
-                System.out.println("Error: " + status);
-                System.out.println("Msg: " + msg);
+                System.err.println("Error creating assistant. Status: " + status);
+                System.err.println("Response: " + response);
             }
 
             connection.disconnect();
         } catch (Exception e) {
+            System.err.println("Failed to create assistant: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
     public String getAssistant(){
+        String result = "";
         try {
             // URL for the OpenAI Chat Completion endpoint
             URL url = new URL("https://api.openai.com/v1/assistants/" + this.assistantId);
@@ -120,6 +101,7 @@ public class AssistantConversation {
             // Handling the response
             int status = connection.getResponseCode();
             String msg = connection.getResponseMessage();
+
             if (status == 200) {
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
                     StringBuilder response = new StringBuilder();
@@ -127,6 +109,7 @@ public class AssistantConversation {
                     while ((responseLine = br.readLine()) != null) {
                         response.append(responseLine.trim());
                     }
+                    result = response.toString();
 //                    System.out.println("Response from OpenAI: " + response.toString());
 
 
@@ -142,14 +125,14 @@ public class AssistantConversation {
         }
 
 
-        return "";
+        return result;
     }
 
     /**
      * Creates conversation thread
-     * @return Thread object
+     * @return ThreadId
      */
-    private Object createThread(){
+    private String createThread(){
         try {
             // URL for the OpenAI Chat Completion endpoint
             URL url = new URL("https://api.openai.com/v1/threads");
@@ -173,7 +156,9 @@ public class AssistantConversation {
                     }
 //                    System.out.println("Response from OpenAI: " + response.toString());
 //                    this.thread = new Thread(response);
-                    return response;
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    JsonNode rootNode = objectMapper.readTree(response.toString());
+                    this.threadId = rootNode.get("id").asText();
 
                 }
             } else {
@@ -191,7 +176,7 @@ public class AssistantConversation {
     private void deleteThread(){
         try {
             // URL for the OpenAI Chat Completion endpoint
-            URL url = new URL("https://api.openai.com/v1/threads/" + this.thread.getThreadId());
+            URL url = new URL("https://api.openai.com/v1/threads/" + this.threadId);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
             // Setting headers
@@ -221,7 +206,7 @@ public class AssistantConversation {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        this.thread = null;
+        this.threadId = null;
     }
 
     private Object getThread(String threadId){
@@ -262,7 +247,7 @@ public class AssistantConversation {
     }
 
     private void setThread(){
-        if (this.thread == null){
+        if (this.threadId == null){
             try {
                 // URL for the OpenAI Chat Completion endpoint
                 URL url = new URL("https://api.openai.com/v1/threads");
@@ -285,8 +270,9 @@ public class AssistantConversation {
                             response.append(responseLine.trim());
                         }
 //                    System.out.println("Response from OpenAI: " + response.toString());
-                        this.thread = new Thread(response);
-
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        JsonNode rootNode = objectMapper.readTree(response.toString());
+                        this.threadId = rootNode.get("id").asText();
                     }
                 } else {
                     System.out.println("Error: " + status);
@@ -354,7 +340,7 @@ public class AssistantConversation {
     private Object assistantReply(){
         try {
             // URL for the OpenAI Chat Completion endpoint
-            URL url = new URL("https://api.openai.com/v1/threads/" + this.thread.getThreadId() + "/runs");
+            URL url = new URL("https://api.openai.com/v1/threads/" + this.threadId + "/runs");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
             // Setting headers
@@ -452,6 +438,11 @@ public class AssistantConversation {
         return "";
     }
 
+    /**
+     * Uses getMessages method to return list of OpenAI Message objects and returns most recent one. Since messages are presented by timestamp in descending order, this is the first message
+     * @param messages List of OpenAI message objects
+     * @return most recent OpenAI message
+     */
     private Object getMostRecentMessage(Object messages){
         try {
             ObjectMapper objectMapper = new ObjectMapper();
@@ -464,224 +455,12 @@ public class AssistantConversation {
     }
 
 
-    // I don't think this is necessary, tagging it for now.
-    @Deprecated
-    public HashMap<String, String> listMessages(String threadId) {
-        Object messagesResponse = this.getMessages(threadId);
-        HashMap<String, String> resultMap = new HashMap<>();
-        ObjectMapper mapper = new ObjectMapper();
-
-
-        try {
-            // Parse the JSON string
-            JsonNode root = mapper.readTree(messagesResponse.toString());
-            JsonNode dataArray = root.path("data");
-
-            // Iterate over each element in the data array
-            for (JsonNode dataItem : dataArray) {
-                String id = dataItem.path("created_at").asText();
-                JsonNode contentArray = dataItem.path("content");
-
-                // Extract "value" from the first content item if available
-                if (contentArray.isArray() && contentArray.size() > 0) {
-                    JsonNode textNode = contentArray.get(0).path("text");
-                    String contentValue = textNode.path("value").asText();
-                    resultMap.put(id, contentValue);
-                }
-            }
-
-
-            return resultMap;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
 
     /**
-     * Currently uses already-existent assistant, sets message thread and allows user to send queries to assistant to
-     * receive replies back to advance conversation
+     * Uploads local file to OpenAI and returns the fileID of the OpenAI File Object
+     * @param filePath location of file to be uploaded
+     * @return fileID of the OpenAI File Object
      */
-    public void basicConversation(){
-
-        AssistantConversation basicConversation = new AssistantConversation(this.ASSISTANT_ID);
-
-        String assistant = basicConversation.getAssistant();
-
-        basicConversation.setThread();
-
-
-        Scanner scan = new Scanner(System.in);
-        String input;
-
-        do {
-            System.out.print("Query: ");
-            input = scan.nextLine();
-
-            Object userMessage = basicConversation.createUserMessage(basicConversation.thread.getThreadId(), input);
-
-            Object assistantReply = basicConversation.assistantReply();
-            Object conversation = basicConversation.getMessages(basicConversation.thread.getThreadId());
-            System.out.println(basicConversation.getMostRecentMessage(conversation));
-
-
-        } while (!input.equals("quit"));
-    }
-
-    public void defaultRAGConversation(){
-        AssistantConversation RAGConversation = new AssistantConversation(this.ASSISTANT_ID);
-
-        String assistant = RAGConversation.getAssistant();
-
-        RAGConversation.setThread();
-
-
-        Scanner scan = new Scanner(System.in);
-        String input;
-
-        do {
-            System.out.print("Query: ");
-            input = scan.nextLine();
-
-            Object userMessage = RAGConversation.createUserMessage(RAGConversation.thread.getThreadId(), input);
-
-            Object assistantReply = RAGConversation.assistantReply();
-            Object conversation = RAGConversation.getMessages(RAGConversation.thread.getThreadId());
-            //note: Only the assistant message is printed out here since the CLI retains the user's query
-            System.out.println(RAGConversation.getMostRecentMessage(conversation));
-
-
-        } while (!input.equals("quit"));
-    }
-
-    /**
-     * Given the complete file path with filename.ext, file is uploaded to OpenAI. Not sure where yet
-     * Individual files can be up to 512 MB, and the size of all files uploaded by one organization can be up to 100 GB.
-     * There seems to be a workaround for this file size limitation through uploading by parts limited to 64 MB with
-     * a total file size limit of 8 GB
-     *
-     * NOTE: this method does not lead to the actual uploading. It must be completed.
-     * @param filePath complete filepath with extension
-     * @return pendingUpload (Upload object with status "pending")
-     */
-    private Object addUpload(String filePath){
-
-        try {
-            File file = new File(filePath);
-            String fileName = file.getName();
-            long fileBytes = file.length();
-            String filePurpose = "assistants";
-            String fileMimeType = Files.probeContentType(file.toPath());
-
-
-//            System.out.println("File Name: " + fileName);
-//            System.out.println("File Size (in bytes): " + fileBytes);
-//            System.out.println("File Purpose: " + filePurpose);
-//            System.out.println("File MIME Type: " + fileMimeType);
-
-
-
-            // URL for the OpenAI Chat Completion endpoint
-            URL url = new URL("https://api.openai.com/v1/uploads");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-            // Setting headers
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setDoOutput(true);
-
-            // JSON payload
-            String jsonInputString = "{ \"filename\": \"" + fileName +
-                    "\", \"purpose\": \"" + filePurpose +
-                    "\", \"bytes\": " + fileBytes +
-                    ", \"mime_type\": \"" + fileMimeType +
-                    "\" }";
-
-            // Sending the request
-            try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = jsonInputString.getBytes("utf-8");
-                os.write(input, 0, input.length);
-            }
-
-            // Handling the response
-            int status = connection.getResponseCode();
-            String msg = connection.getResponseMessage();
-            if (status == 200) {
-                try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), "utf-8"))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-//                    System.out.println("Response from OpenAI: " + response.toString());
-                    return response;
-
-                }
-            } else {
-                System.out.println("Error: " + status);
-                System.out.println("Msg: " + msg);
-            }
-
-            connection.disconnect();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
-
-    }
-
-
-    public void createAssistantForFileUpload() {
-        try {
-            URL url = new URL(BASE_URL + "/assistants");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
-            connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("OpenAI-Beta", "assistants=v1");
-            connection.setDoOutput(true);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("model", "gpt-4-turbo-preview");
-            payload.put("name", "API_ACCESS_TEST_JAVA");
-            payload.put("instructions", "You are a helpful assistant.");
-
-            // Add tools configuration
-            List<Map<String, String>> tools = new ArrayList<>();
-            Map<String, String> retrieval = new HashMap<>();
-            retrieval.put("type", "retrieval");
-            tools.add(retrieval);
-
-            payload.put("tools", tools);
-
-            ObjectMapper mapper = new ObjectMapper();
-            try (OutputStream os = connection.getOutputStream()) {
-                mapper.writeValue(os, payload);
-            }
-
-            int status = connection.getResponseCode();
-            String response = readResponse(connection);
-
-            System.out.println("Assistant creation status: " + status);
-            System.out.println("Assistant creation response: " + response);
-
-            if (status == 200 || status == 201) {
-                JsonNode rootNode = mapper.readTree(response);
-                this.assistantId = rootNode.get("id").asText();
-                System.out.println("Assistant created successfully with ID: " + this.assistantId);
-            } else {
-                System.err.println("Error creating assistant. Status: " + status);
-                System.err.println("Response: " + response);
-            }
-
-            connection.disconnect();
-        } catch (Exception e) {
-            System.err.println("Failed to create assistant: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
     public String uploadFile(String filePath) {
         try {
             File file = new File(filePath);
@@ -738,6 +517,12 @@ public class AssistantConversation {
         }
     }
 
+    /**
+     * Convenient helper method to be used to read responses from API requests
+     * @param connection HttpURLConnection object
+     * @return response
+     * @throws IOException
+     */
     private String readResponse(HttpURLConnection connection) throws IOException {
         try (InputStream is = connection.getResponseCode() >= 400 ?
                 connection.getErrorStream() : connection.getInputStream();
@@ -795,7 +580,7 @@ public class AssistantConversation {
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("OpenAI-Beta", "assistants=v1");
+            connection.setRequestProperty("OpenAI-Beta", "assistants=v2");
             connection.setDoOutput(true);
 
             Map<String, String> payload = new HashMap<>();
@@ -823,6 +608,32 @@ public class AssistantConversation {
             return false;
         }
     }
+
+    /**
+     * Cradle-to-grave method combining uploadFile, getFileInfo and attachFileToAssistant
+     * @return
+     */
+    public boolean uploadFileToAssistant(String filePath) {
+        String fileId = uploadFile(filePath);
+        if (fileId != null) {
+            // Get file info
+            FileResponse fileInfo = this.getFileInfo(fileId);
+            if (fileInfo != null) {
+                System.out.println("File status: " + fileInfo.getStatus());
+                System.out.println("File size: " + fileInfo.getBytes() + " bytes");
+            }
+//
+            // Attach file to assistant
+            boolean attached = this.attachFileToAssistant(fileId);
+            System.out.println("File attached to assistant: " + attached);
+            return attached;
+        }
+        System.out.println("No file was uploaded, fileId was null");
+        return false;
+    }
+
+
+
 
     // Response class for file information
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -852,6 +663,75 @@ public class AssistantConversation {
         public void setStatus(String status) { this.status = status; }
     }
 
+
+    /*
+     * Demonstration methods
+     */
+
+    /**
+     * Currently uses already-existent assistant, sets message thread and allows user to send queries to assistant to
+     * receive replies back to advance conversation
+     */
+    public void basicConversation(String assistantId){
+
+        AssistantConversation basicConversation = new AssistantConversation(assistantId);
+
+        String assistant = basicConversation.getAssistant();
+
+        basicConversation.setThread();
+
+
+        Scanner scan = new Scanner(System.in);
+        String input;
+
+        do {
+            System.out.print("Query: ");
+            input = scan.nextLine();
+
+            Object userMessage = basicConversation.createUserMessage(basicConversation.threadId, input);
+
+            Object assistantReply = basicConversation.assistantReply();
+            Object conversation = basicConversation.getMessages(basicConversation.threadId);
+            System.out.println(basicConversation.getMostRecentMessage(conversation));
+
+
+        } while (!input.equals("quit"));
+    }
+
+    public void defaultRAGConversation(){
+
+
+//        String assistant = this.getAssistant();
+
+        this.setThread();
+
+
+        Scanner scan = new Scanner(System.in);
+        String input;
+
+        do {
+            System.out.print("Query: ");
+            input = scan.nextLine();
+
+            Object userMessage = this.createUserMessage(this.threadId, input);
+
+            Object assistantReply = this.assistantReply();
+            Object conversation = this.getMessages(this.threadId);
+            //note: Only the assistant message is printed out here since the CLI retains the user's query
+            System.out.println(this.getMostRecentMessage(conversation));
+
+
+        } while (!input.equals("quit"));
+    }
+
+
+
+
+
+    /**
+     *
+     * @param args
+     */
     public static void main(String[] args){
 
         // todo:
@@ -870,7 +750,7 @@ public class AssistantConversation {
 
         // TOMS ADDED IN CODE TO CREATE A NEW ASSISTANT AND ATTACH THE UPLOADED FILE. AT THE MOMENT THE FILE IS HARDCODED
         // COMMENT THIS IN TO TEST IT. COMMENTED OUT NOW TO NOT SPAM UPLOADS
-//        conversation.createAssistantForFileUpload();
+//        conversation.createAssistant();
 //        String fileId = conversation.uploadFile("cs514_exception_handling_worksheet.pdf");
 //        System.out.println("Uploaded file ID: " + fileId);
 //        if (fileId != null) {
@@ -880,11 +760,16 @@ public class AssistantConversation {
 //                System.out.println("File status: " + fileInfo.getStatus());
 //                System.out.println("File size: " + fileInfo.getBytes() + " bytes");
 //            }
-//
+////
 //            // Attach file to assistant
 //            boolean attached = conversation.attachFileToAssistant(fileId);
 //            System.out.println("File attached to assistant: " + attached);
 //        }
+
+
+        conversation.createAssistant();
+        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("cs514_exception_handling_worksheet.pdf"));
+        System.out.println("File has been uploaded to assistant: " + conversation.uploadFileToAssistant("Javascript and React Worksheet.pdf"));
 
         conversation.defaultRAGConversation();
     }
